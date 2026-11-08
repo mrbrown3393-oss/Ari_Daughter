@@ -1,0 +1,10 @@
+{
+  "name": "ARIA",
+  "short_name": "ARIA",
+  "description": "A thoughtful AI companion.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090b12",
+  "theme_color": "#090b12",
+  "icons": [{ "src": "/aria-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
