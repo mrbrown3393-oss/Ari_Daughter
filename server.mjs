@@ -29,15 +29,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-const allowedOrigin = process.env.APP_ORIGIN;
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin || !allowedOrigin || origin === allowedOrigin) return callback(null, true);
-    return callback(new Error("Origin not allowed"));
-  },
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
-}));
+// Same-origin is the default. Add one explicit origin only when a separate
+// frontend host is intentionally configured.
+if (process.env.APP_ORIGIN) {
+  app.use(cors({
+    origin: process.env.APP_ORIGIN,
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"]
+  }));
+}
 app.use(express.json({ limit: "24kb" }));
 
 const chatLimiter = rateLimit({
@@ -81,10 +81,7 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
-        },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemInstruction }] },
           contents,
@@ -98,9 +95,7 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
       console.error("Gemini request failed:", response.status);
       return res.status(502).json({ error: "ARIA couldn't reach her AI service. Please try again." });
     }
-    const reply = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text || "")
-      .join("").trim();
+    const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
     if (!reply) return res.status(502).json({ error: "ARIA received an empty response. Try again." });
     return res.json({ reply });
   } catch (error) {
@@ -115,6 +110,4 @@ if (isProduction) {
   app.get("*", (_req, res) => res.sendFile(path.join(dist, "index.html")));
 }
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`ARIA server listening on ${port}`);
-});
+app.listen(port, "0.0.0.0", () => console.log(`ARIA server listening on ${port}`));
