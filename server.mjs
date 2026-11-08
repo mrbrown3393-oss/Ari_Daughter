@@ -12,6 +12,8 @@ const port = Number(process.env.PORT || 10000);
 const isProduction = process.env.NODE_ENV === "production";
 
 app.disable("x-powered-by");
+// Render terminates TLS and forwards one trusted proxy hop to this service.
+app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
