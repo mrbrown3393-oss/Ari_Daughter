@@ -150,10 +150,13 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
 
   try {
     const model = process.env.GROK_MODEL || "grok-4.7";
-    const input = parsed.data.messages.map((message) => ({
-      role: message.role,
-      content: message.content
-    }));
+    const input = [
+      { role: "system", content: systemInstruction },
+      ...parsed.data.messages.map((message) => ({
+        role: message.role,
+        content: message.content
+      }))
+    ];
     const response = await fetch("https://api.x.ai/v1/responses", {
       method: "POST",
       headers: {
@@ -162,7 +165,6 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
       },
       body: JSON.stringify({
         model,
-        instructions: systemInstruction,
         input,
         temperature: 0.7,
         top_p: 0.95,
@@ -173,7 +175,7 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error("Grok request failed:", response.status);
+      console.error("Grok request failed:", response.status, data?.error?.message || data?.message || data?.code || "no error detail");
       return res.status(502).json({ error: "ARIA couldn't reach Grok. Please check the service configuration and try again." });
     }
     const reply = (data.output || [])
