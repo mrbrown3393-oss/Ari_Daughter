@@ -147,33 +147,37 @@ app.get("/api/ai/diagnostics", async (_req, res) => {
   const model = process.env.GROK_MODEL || "grok-4.7";
   if (!apiKey) return res.status(503).json({ ok: false, provider: "grok", keyConfigured: false, model });
   try {
-    const response = await fetch("https://api.x.ai/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    // Ask xAI for metadata about the authenticating key before testing models.
+    const response = await fetch("https://api.x.ai/v1/api-key", {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
       signal: AbortSignal.timeout(15000)
     });
-    const data = await response.json().catch(() => ({}));
+    const raw = await response.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
     if (!response.ok) {
+      const detail = data?.error?.message || data?.error?.code || data?.message || data?.detail || "xAI rejected the API-key check";
       return res.status(200).json({
         ok: false, provider: "grok", keyConfigured: true,
-        authentication: response.status === 401 || response.status === 403 ? "rejected" : "responded_with_error",
-        httpStatus: response.status,
-        model, modelAvailable: false,
-        error: data?.error?.message || data?.error?.code || "Model-list request failed"
+        authentication: "rejected_or_unverified",
+        httpStatus: response.status, model,
+        error: String(detail).slice(0, 240)
       });
     }
-    const models = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
-    const available = models.some((entry) => entry?.id === model || (Array.isArray(entry?.aliases) && entry.aliases.includes(model)));
+    const permissions = data?.permissions ?? data?.key?.permissions ?? null;
+    const status = data?.status ?? data?.key?.status ?? null;
     return res.json({
       ok: true, provider: "grok", keyConfigured: true,
       authentication: "accepted", model,
-      modelAvailable: available,
-      availableModelCount: models.length
+      keyStatus: typeof status === "string" ? status : null,
+      permissions: Array.isArray(permissions) ? permissions : null,
+      metadataFields: Object.keys(data || {}).slice(0, 12)
     });
   } catch (error) {
     return res.status(200).json({
       ok: false, provider: "grok", keyConfigured: true,
       authentication: "not_verified", model,
-      error: error?.name === "TimeoutError" ? "xAI model check timed out" : "Could not reach xAI model-list endpoint"
+      error: error?.name === "TimeoutError" ? "xAI key check timed out" : "Could not reach xAI key-check endpoint"
     });
   }
 });
