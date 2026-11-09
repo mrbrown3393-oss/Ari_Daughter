@@ -150,37 +150,31 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
 
   try {
     const model = process.env.GROK_MODEL || "grok-4.7";
-    const input = [
+    const messages = [
       { role: "system", content: systemInstruction },
-      ...parsed.data.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
+      ...parsed.data.messages.map(({ role, content }) => ({ role, content }))
     ];
-    const response = await fetch("https://api.x.ai/v1/responses", {
+    const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ model, input }),
+      body: JSON.stringify({ model, messages, stream: false }),
       signal: AbortSignal.timeout(60_000)
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const errorDetail = data?.error?.message || data?.error?.code || data?.message || data?.code || JSON.stringify(data).slice(0, 500);
+      const errorDetail = data?.error?.message || data?.error?.code || data?.message || data?.code || "upstream request rejected";
       console.error("Grok request failed:", response.status, errorDetail);
       return res.status(502).json({ error: "ARIA couldn't reach Grok. Please check the service configuration and try again." });
     }
-    const reply = (data.output || [])
-      .filter((item) => item.type === "message" && item.role === "assistant")
-      .flatMap((item) => item.content || [])
-      .filter((part) => part.type === "output_text" && typeof part.text === "string")
-      .map((part) => part.text)
-      .join("\n")
-      .trim() || (typeof data.output_text === "string" ? data.output_text.trim() : "");
-    if (!reply) return res.status(502).json({ error: "Grok returned an empty response. Please try again." });
-    return res.json({ reply });
+    const reply = data?.choices?.[0]?.message?.content;
+    if (typeof reply !== "string" || !reply.trim()) {
+      console.error("Grok returned no text content.");
+      return res.status(502).json({ error: "Grok returned an empty response. Please try again." });
+    }
+    return res.json({ reply: reply.trim() });
   } catch (error) {
     console.error("Grok request error:", error?.name || "unknown");
     return res.status(504).json({ error: "Grok took too long to respond. Please try again." });
