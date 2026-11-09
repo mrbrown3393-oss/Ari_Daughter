@@ -167,12 +167,15 @@ app.get("/api/ai/diagnostics", async (_req, res) => {
     let data = {};
     try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
     if (!response.ok) {
-      const detail = data?.error?.message || data?.error?.code || data?.message || data?.detail || "xAI inference request failed";
+      const detail = typeof data?.error === "string"
+        ? data.error
+        : data?.error?.message || data?.error?.code || data?.message || data?.detail ||
+          data?.details?.[0]?.message || raw || "xAI inference request failed";
       return res.status(200).json({
         ok: false, provider: "grok", keyConfigured: true,
         authentication: response.status === 401 ? "rejected" : response.status === 403 ? "forbidden_or_acl" : "not_determined",
         httpStatus: response.status, model,
-        error: String(detail).slice(0, 240)
+        error: String(detail).replace(/[\r\n]+/g, " ").slice(0, 400)
       });
     }
     const reply = data?.choices?.[0]?.message?.content;
