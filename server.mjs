@@ -163,19 +163,13 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model,
-        input,
-        temperature: 0.7,
-        top_p: 0.95,
-        max_output_tokens: 1200,
-        store: false
-      }),
+      body: JSON.stringify({ model, input }),
       signal: AbortSignal.timeout(60_000)
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error("Grok request failed:", response.status, data?.error?.message || data?.message || data?.code || "no error detail");
+      const errorDetail = data?.error?.message || data?.error?.code || data?.message || data?.code || JSON.stringify(data).slice(0, 500);
+      console.error("Grok request failed:", response.status, errorDetail);
       return res.status(502).json({ error: "ARIA couldn't reach Grok. Please check the service configuration and try again." });
     }
     const reply = (data.output || [])
