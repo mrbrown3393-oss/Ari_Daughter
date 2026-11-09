@@ -147,37 +147,45 @@ app.get("/api/ai/diagnostics", async (_req, res) => {
   const model = process.env.GROK_MODEL || "grok-4.7";
   if (!apiKey) return res.status(503).json({ ok: false, provider: "grok", keyConfigured: false, model });
   try {
-    // Ask xAI for metadata about the authenticating key before testing models.
-    const response = await fetch("https://api.x.ai/v1/api-key", {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      signal: AbortSignal.timeout(15000)
+    // Verify the credential against the same inference endpoint used by chat.
+    const response = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Reply with OK." }],
+        max_tokens: 8,
+        stream: false
+      }),
+      signal: AbortSignal.timeout(30000)
     });
     const raw = await response.text();
     let data = {};
     try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
     if (!response.ok) {
-      const detail = data?.error?.message || data?.error?.code || data?.message || data?.detail || "xAI rejected the API-key check";
+      const detail = data?.error?.message || data?.error?.code || data?.message || data?.detail || "xAI inference request failed";
       return res.status(200).json({
         ok: false, provider: "grok", keyConfigured: true,
-        authentication: "rejected_or_unverified",
+        authentication: response.status === 401 ? "rejected" : response.status === 403 ? "forbidden_or_acl" : "not_determined",
         httpStatus: response.status, model,
         error: String(detail).slice(0, 240)
       });
     }
-    const permissions = data?.permissions ?? data?.key?.permissions ?? null;
-    const status = data?.status ?? data?.key?.status ?? null;
+    const reply = data?.choices?.[0]?.message?.content;
     return res.json({
       ok: true, provider: "grok", keyConfigured: true,
       authentication: "accepted", model,
-      keyStatus: typeof status === "string" ? status : null,
-      permissions: Array.isArray(permissions) ? permissions : null,
-      metadataFields: Object.keys(data || {}).slice(0, 12)
+      inference: typeof reply === "string" && reply.trim() ? "working" : "accepted_without_text"
     });
   } catch (error) {
     return res.status(200).json({
       ok: false, provider: "grok", keyConfigured: true,
       authentication: "not_verified", model,
-      error: error?.name === "TimeoutError" ? "xAI key check timed out" : "Could not reach xAI key-check endpoint"
+      error: error?.name === "TimeoutError" ? "xAI inference check timed out" : "Could not reach xAI inference endpoint"
     });
   }
 });
