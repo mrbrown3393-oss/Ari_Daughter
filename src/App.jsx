@@ -11,6 +11,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [quantumBusy, setQuantumBusy] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -45,6 +46,47 @@ export default function App() {
       setError(err.message || "Couldn't connect. Please try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+
+  async function runQuantumCoin() {
+    if (busy || quantumBusy) return;
+    setQuantumBusy(true);
+    setError("");
+    try {
+      const submitted = await fetch("/api/quantum/coin-toss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shots: 10 })
+      });
+      const job = await submitted.json();
+      if (!submitted.ok) throw new Error(job.error || "Atlas couldn't start the quantum run.");
+      let status;
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const response = await fetch(`/api/quantum/jobs/${encodeURIComponent(job.jobId)}/status`);
+        status = await response.json();
+        if (!response.ok) throw new Error(status.error || "Couldn't check the Atlas job.");
+        if (["completed", "failed", "cancelled"].includes(status.status)) break;
+      }
+      if (status?.status !== "completed") throw new Error(status?.error || "The quantum run is taking longer than expected. Your normal chat is still ready.");
+      const response = await fetch(`/api/quantum/jobs/${encodeURIComponent(job.jobId)}/result`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Couldn't retrieve the quantum result.");
+      const result = typeof payload.result === "string" ? JSON.parse(payload.result) : payload.result;
+      const heads = Number(result?.heads);
+      const tails = Number(result?.tails);
+      const shots = Number(result?.shots ?? heads + tails);
+      if (!Number.isFinite(heads) || !Number.isFinite(tails)) throw new Error("Atlas returned an unexpected result format.");
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: `I ran 10 quantum coin measurements through Moth Atlas (emulator). The result was ${result.output || (heads >= tails ? "heads" : "tails")}: ${heads} heads and ${tails} tails across ${shots} measurements. This is a playful quantum experiment, not a source of guaranteed randomness.`
+      }]);
+    } catch (err) {
+      setError(err.message || "The quantum experiment couldn't complete.");
+    } finally {
+      setQuantumBusy(false);
     }
   }
 
@@ -130,7 +172,7 @@ export default function App() {
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write something to ARIA..." aria-label="Message ARIA" maxLength={6000} />
           <button className="send-button" type="submit" disabled={!draft.trim() || busy} aria-label="Send message">↑</button>
         </form>
-        <div className="composer-footer"><span>YOUR SPACE. YOUR PACE.</span><button type="button" className="speak-button" onClick={speakLast}>{speaking ? "STOP VOICE" : "READ LAST REPLY ↗"}</button></div>
+        <div className="composer-footer"><span>YOUR SPACE. YOUR PACE.</span><span className="footer-actions"><button type="button" className="speak-button" onClick={runQuantumCoin} disabled={quantumBusy || busy}>{quantumBusy ? "RUNNING QUANTUM…" : "QUANTUM COIN ✧"}</button><button type="button" className="speak-button" onClick={speakLast}>{speaking ? "STOP VOICE" : "READ LAST REPLY ↗"}</button></span></div>
       </div>
       <footer className="footer-note">Built with care · Your conversations are sent securely to the configured AI service.</footer>
     </main>
