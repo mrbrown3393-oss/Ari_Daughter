@@ -12,6 +12,15 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [quantumBusy, setQuantumBusy] = useState(false);
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
+  const [experimentHistory, setExperimentHistory] = useState(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("aria.quantum.experiments") || "[]");
+      return Array.isArray(saved) ? saved.slice(0, 30) : [];
+    } catch {
+      return [];
+    }
+  });
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -79,9 +88,19 @@ export default function App() {
       const tails = Number(result?.tails);
       const shots = Number(result?.shots ?? heads + tails);
       if (!Number.isFinite(heads) || !Number.isFinite(tails)) throw new Error("Atlas returned an unexpected result format.");
+      const experiment = {
+        id: job.jobId,
+        createdAt: new Date().toISOString(),
+        engine: "coin-toss-v1",
+        mode: "emulator",
+        heads,
+        tails,
+        shots
+      };
+      setExperimentHistory((current) => [experiment, ...current].slice(0, 30));
       setMessages((current) => [...current, {
         role: "assistant",
-        content: `I ran 10 quantum coin measurements through Moth Atlas (emulator). The result was ${result.output || (heads >= tails ? "heads" : "tails")}: ${heads} heads and ${tails} tails across ${shots} measurements. This is a playful quantum experiment, not a source of guaranteed randomness.`
+        content: `I ran ${shots} quantum coin measurements through Moth Atlas (emulator). The result was ${result.output || (heads >= tails ? "heads" : "tails")}: ${heads} heads and ${tails} tails. I've saved this experiment in your Quantum Playground on this device. This is an emulator experiment, not a source of guaranteed randomness.`
       }]);
     } catch (err) {
       setError(err.message || "The quantum experiment couldn't complete.");
@@ -165,6 +184,36 @@ export default function App() {
         </div>
       </section>
 
+      <section className={`playground ${playgroundOpen ? "open" : ""}`} aria-label="Quantum Playground">
+        <div className="playground-heading">
+          <div>
+            <span className="eyebrow">ARIA × ATLAS</span>
+            <h2>Quantum Playground</h2>
+            <p>Run small experiments and explore their results with ARIA.</p>
+          </div>
+          <button type="button" className="playground-toggle" onClick={() => setPlaygroundOpen((open) => !open)} aria-expanded={playgroundOpen}>
+            {playgroundOpen ? "CLOSE" : "OPEN"}
+          </button>
+        </div>
+        {playgroundOpen && <>
+          <div className="playground-status"><span className="status-dot" /> Atlas emulator · Coin toss engine</div>
+          <button type="button" className="experiment-button" onClick={runQuantumCoin} disabled={quantumBusy || busy}>
+            {quantumBusy ? "RUNNING EXPERIMENT…" : "RUN 10-QUANTUM COIN TOSSES ✧"}
+          </button>
+          <div className="history-heading"><strong>Experiment history</strong><span>{experimentHistory.length} / 30 saved on this device</span></div>
+          {experimentHistory.length === 0 ? <p className="history-empty">Your experiments will appear here after your first run.</p> :
+            <div className="experiment-list">
+              {experimentHistory.map((item) => <article className="experiment-card" key={item.id}>
+                <div className="experiment-card-top"><strong>{item.heads} heads · {item.tails} tails</strong><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></div>
+                <div className="experiment-bar"><span style={{ width: `${item.shots ? (item.heads / item.shots) * 100 : 0}%` }} /></div>
+                <div className="experiment-card-bottom"><span>{item.shots} measurements · Emulator</span><button type="button" onClick={() => sendMessage(`Please explain this quantum coin-toss experiment in plain language: ${item.heads} heads and ${item.tails} tails from ${item.shots} measurements using the Atlas emulator. Explain what this small sample can and cannot tell us.`)} disabled={busy}>ASK ARIA TO EXPLAIN ↗</button></div>
+              </article>)}
+            </div>
+          }
+          <p className="history-note">History is stored locally in this browser. It is not synced across devices or stored in a cloud database.</p>
+        </>}
+      </section>
+
       <div className="composer-wrap">
         {error && <p className="error-message" role="alert">{error}</p>}
         <form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
@@ -172,7 +221,7 @@ export default function App() {
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write something to ARIA..." aria-label="Message ARIA" maxLength={6000} />
           <button className="send-button" type="submit" disabled={!draft.trim() || busy} aria-label="Send message">↑</button>
         </form>
-        <div className="composer-footer"><span>YOUR SPACE. YOUR PACE.</span><span className="footer-actions"><button type="button" className="speak-button" onClick={runQuantumCoin} disabled={quantumBusy || busy}>{quantumBusy ? "RUNNING QUANTUM…" : "QUANTUM COIN ✧"}</button><button type="button" className="speak-button" onClick={speakLast}>{speaking ? "STOP VOICE" : "READ LAST REPLY ↗"}</button></span></div>
+        <div className="composer-footer"><span>YOUR SPACE. YOUR PACE.</span><span className="footer-actions"><button type="button" className="speak-button" onClick={() => setPlaygroundOpen((open) => !open)} aria-expanded={playgroundOpen}>{playgroundOpen ? "CLOSE PLAYGROUND" : "QUANTUM PLAYGROUND ✧"}</button><button type="button" className="speak-button" onClick={speakLast}>{speaking ? "STOP VOICE" : "READ LAST REPLY ↗"}</button></span></div>
       </div>
       <footer className="footer-note">Built with care · Your conversations are sent securely to the configured AI service.</footer>
     </main>
